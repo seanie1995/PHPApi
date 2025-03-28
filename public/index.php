@@ -9,10 +9,11 @@ require __DIR__ . '/../vendor/autoload.php';
 $app = AppFactory::create();
 
 $app->get('/', function (Request $request, Response $response, array $args) {
-    $response->getBody()->write("Hello, world!");
+    $response->getBody()->write("P1 API!");
 
     return $response;
 });
+
 
 $app->post('/login', function (Request $request, Response $response, array $args) {
 
@@ -22,6 +23,7 @@ $app->post('/login', function (Request $request, Response $response, array $args
         return $response->withStatus(400, 'Authorization header is missing')->withHeader('Content-Type', 'application/json');
     }
 
+
     $headers = [
         "Authorization: $authHeader",
         'Content-Type: application/json'
@@ -29,7 +31,7 @@ $app->post('/login', function (Request $request, Response $response, array $args
 
     error_log("Received Headers: " . json_encode($headers));
 
-    $url = 'https://hp5.positionett.se/fmi/data/vLatest/databases/dev-Bamse_ph/sessions';
+    $url = 'https://hp5.positionett.se/fmi/data/vLatest/databases/PositionEtt_P1PR_PROJECT/sessions';
 
     $data = [];
 
@@ -91,7 +93,9 @@ $app->delete('/logout', function (Request $request, Response $response, array $a
 
     error_log($token);
 
-    $url = "https://hp5.positionett.se/fmi/data/vLatest/databases/dev-Bamse_ph/sessions/$token";
+    $url = "https://hp5.positionett.se/fmi/data/vLatest/databases/PositionEtt_P1PR_PROJECT/sessions/$token";
+
+    // $url = "https://hp5.positionett.se/fmi/data/vLatest/databases/dev-Bamse_ph/sessions/$token";
 
     $ch = curl_init($url);
 
@@ -169,14 +173,38 @@ $app->get('/fetchAllUsers', function (Request $request, Response $response, arra
     return $response->withHeader('Content-Type', 'application/json')->withStatus($httpCode);
 });
 
-$app->post('/createNewUser', function (Request $request, Response $response, $args) {
+$app->post('/fetchTimeToday', function (Request $request, Response $response, $args) {
 
-    $url = "https://hp5.positionett.se/fmi/data/vLatest/databases/dev-Bamse_ph/layouts/User/records";
-    $bearer = "";
+    $authHeader = $request->getHeaderLine('Authorization');
+
+    if (empty($authHeader)) {
+        return $response->withStatus(400, 'Authorization header is missing')->withHeader('Content-Type', 'application/json');
+    }
 
     $headers = [
-        "Authorization: Bearer $bearer"
+        "Authorization: $authHeader",
+        'Content-Type: application/json'
     ];
+
+    $token = substr($authHeader, 7);
+     
+    if (!$token) {
+        $response->getBody()->write(json_encode(["Error" => "Missing Token"]));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+    }
+
+    $url = "https://hp5.positionett.se/fmi/data/vLatest/databases/PositionEtt_P1PR_PROJECT/layouts/timeDataAPI/_find";
+
+    $data = [];
+
+    $ch = curl_init($url);
+
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+
+    
 });
 
 $app->addErrorMiddleware(true, false, false);
