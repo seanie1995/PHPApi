@@ -77,7 +77,7 @@ $app->post('/login', function (Request $request, Response $response, array $args
                     'token' => $token
                 ])
             );
-        } 
+        }
     }
 
     return $response->withHeader('Content-Type', 'application/json');
@@ -117,55 +117,73 @@ $app->delete('/logout', function (Request $request, Response $response, array $a
 
 // FETCH ALL USERS
 
-$app->get('/fetchAllUsers', function (Request $request, Response $response, array $args) {
+$app->post('/fetchTimeRecords', function (Request $request, Response $response, $args) {
 
     $authHeader = $request->getHeaderLine('Authorization');
-
+    // $data = $request->getParsedBody();
     $token = substr($authHeader, 7);
-     
+
+    if (empty($authHeader)) {
+        return $response->withStatus(400, 'Authorization header is missing')->withHeader('Content-Type', 'application/json');
+    }
+
     if (!$token) {
         $response->getBody()->write(json_encode(["Error" => "Missing Token"]));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
     }
 
-    $url = "https://hp5.positionett.se/fmi/data/vLatest/databases/dev-Bamse_ph/layouts/User/records";
+    $headers = [
+        "Authorization: bearer $token",
+        'Content-Type: application/json'
+    ];
+
+    $data = json_decode($request->getBody()->getContents(), true);
+
+    if (!isset($data['query']) || !is_array($data['query'])) {
+        return $response->withStatus(400)->withHeader('Content-Type', 'application/json');
+    };
+
+    $url = "https://hp5.positionett.se/fmi/data/vLatest/databases/PositionEtt_P1PR_PROJECT/layouts/timeDataAPI/_find";
 
     $ch = curl_init($url);
 
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        "Authorization: Bearer $token",
-        "Content-Type: application/json"
-    ]);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
 
-    $apiResponse = curl_exec($ch);
+    $filemakerResponse = curl_exec($ch);
     $httpCode = curl_getInfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
     if ($httpCode === 200) {
-      
-        $responseData = json_decode($apiResponse, true);
-       
-        if (isset($responseData['response']['data'])) {
-           
-            $filteredUsers = array_map(function ($user) {
+        $responseBody = json_decode($filemakerResponse, true);
+
+        if (isset($responseBody['response']['data'])) {
+
+            $filteredResponse = array_map(function ($posts) {
                 return [
-                    'firstName' => $user['fieldData']['s_firstName'] ?? null,
-                    'lastName'  => $user['fieldData']['s_lastName'] ?? null,
-                    'email'     => $user['fieldData']['s_email'] ?? null,
-                    'recordId' => $user['fieldData']['pk_Id'] ?? null
+                    'startTime' => $posts['fieldData']['time_time_start'] ?? null,
+                    'endTime' => $posts['fieldData']['time_time_end'] ?? null,
+                    'projectName' => $posts['fieldData']['common_article_no'] ?? null,
+                    'projectId' => $posts['fieldData']['!Project'] ?? null,
+                    'commentCustomer' => $posts['fieldData']['common_comment_customer'] ?? null,
+                    'commentInternal' => $posts['fieldData']['common_comment_internal'] ?? null,
+                    'userInitials' => $posts['fieldData']['time_employee_id'] ?? null,
+                    'recordId' => $posts['recordId'] ?? null
+
                 ];
-            }, $responseData['response']['data']);
-            
-            $response->getBody()->write(json_encode(["data" => $filteredUsers]));
+            }, $responseBody['response']['data']);
+
+            $response->getBody()->write(json_encode(["data" => $filteredResponse]));
         } else {
-         
+
             $response->getBody()->write(json_encode(["error" => "No user data found"]));
         }
     } else {
-      
         $response->getBody()->write(json_encode([
-            "error" => "Failed to fetch users",
+            "error" => "Failed to fetch posts",
             "status_code" => $httpCode
         ]));
     }
@@ -173,38 +191,52 @@ $app->get('/fetchAllUsers', function (Request $request, Response $response, arra
     return $response->withHeader('Content-Type', 'application/json')->withStatus($httpCode);
 });
 
-$app->post('/fetchTimeToday', function (Request $request, Response $response, $args) {
+$app->post('/registerTime', function (Request $request, Response $response, array $args) {
 
     $authHeader = $request->getHeaderLine('Authorization');
+    $token = substr($authHeader, 7);
 
     if (empty($authHeader)) {
-        return $response->withStatus(400, 'Authorization header is missing')->withHeader('Content-Type', 'application/json');
+        return $response->withStatus(400, 'Authorization header missing')->withHeader('Content-Type', 'application/json');
     }
 
-    $headers = [
-        "Authorization: $authHeader",
-        'Content-Type: application/json'
-    ];
-
-    $token = substr($authHeader, 7);
-     
     if (!$token) {
         $response->getBody()->write(json_encode(["Error" => "Missing Token"]));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
     }
 
-    $url = "https://hp5.positionett.se/fmi/data/vLatest/databases/PositionEtt_P1PR_PROJECT/layouts/timeDataAPI/_find";
+    $headers = [
+        "Authorization: bearer $token",
+        'Content-Type: application/json'
+    ];
 
-    $data = [];
+    $data = json_decode($request->getBody()->getContents(), true);
+
+    $url = "https://hp5.positionett.se/fmi/data/vLatest/databases/PositionEtt_P1PR_PROJECT/layouts/timeDataAPI/records";
 
     $ch = curl_init($url);
 
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
 
-    
+    $filemakerResponse = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($httpCode === 200) {
+        $responseBody = json_decode($filemakerResponse, true);
+
+        if (isset($responseBody['messages'][0]['code']) && $responseBody['messages'][0]['code'] === "0") {
+            $response->getBody()->write(json_encode(["success" => true, "message" => "Time registered successfully"]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
+        }
+    }
+
+    $response->getBody()->write(json_encode(["success" => false, "message" => "Failed to register time"]));
+    return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
 });
 
 $app->addErrorMiddleware(true, false, false);
