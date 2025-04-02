@@ -164,14 +164,16 @@ $app->post('/fetchTimeRecords', function (Request $request, Response $response, 
 
             $filteredResponse = array_map(function ($posts) {
                 return [
-                    'startTime' => $posts['fieldData']['time_time_start'] ?? null,
-                    'endTime' => $posts['fieldData']['time_time_end'] ?? null,
-                    'projectName' => $posts['fieldData']['common_article_no'] ?? null,
-                    'projectId' => $posts['fieldData']['!Project'] ?? null,
-                    'commentCustomer' => $posts['fieldData']['common_comment_customer'] ?? null,
-                    'commentInternal' => $posts['fieldData']['common_comment_internal'] ?? null,
-                    'userInitials' => $posts['fieldData']['time_employee_id'] ?? null,
-                    'recordId' => $posts['recordId'] ?? null
+                    'time_time_start' => $posts['fieldData']['time_time_start'] ?? null,
+                    'time_time_end' => $posts['fieldData']['time_time_end'] ?? null,
+                    'common_article_no' => $posts['fieldData']['common_article_no'] ?? null,
+                    '!Project' => $posts['fieldData']['!Project'] ?? null,
+                    'common_comment_customer' => $posts['fieldData']['common_comment_customer'] ?? null,
+                    'common_comment_internal' => $posts['fieldData']['common_comment_internal'] ?? null,
+                    'time_employee_id' => $posts['fieldData']['time_employee_id'] ?? null,
+                    'recordId' => $posts['recordId'] ?? null,
+                    'time_chargeable' => $post['fieldData']['time_chargeable'] ?? null,
+                    'time_not_worked' => $post['fieldData']['time_not_worked'] ?? null
 
                 ];
             }, $responseBody['response']['data']);
