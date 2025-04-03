@@ -14,7 +14,6 @@ $app->get('/', function (Request $request, Response $response, array $args) {
     return $response;
 });
 
-
 $app->post('/login', function (Request $request, Response $response, array $args) {
 
     $authHeader = $request->getHeaderLine('Authorization');
@@ -22,7 +21,6 @@ $app->post('/login', function (Request $request, Response $response, array $args
     if (empty($authHeader)) {
         return $response->withStatus(400, 'Authorization header is missing')->withHeader('Content-Type', 'application/json');
     }
-
 
     $headers = [
         "Authorization: $authHeader",
@@ -193,6 +191,8 @@ $app->post('/fetchTimeRecords', function (Request $request, Response $response, 
     return $response->withHeader('Content-Type', 'application/json')->withStatus($httpCode);
 });
 
+// ADD NEW POST
+
 $app->post('/registerTime', function (Request $request, Response $response, array $args) {
 
     $authHeader = $request->getHeaderLine('Authorization');
@@ -241,11 +241,71 @@ $app->post('/registerTime', function (Request $request, Response $response, arra
     return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
 });
 
+// MODIFY EXISTING POST 
+
+$app->patch('/modifyTime', function (Request $request, Response $response, array $args) {
+    $authHeader = $request->getHeaderLine('Authorization');
+    $token = substr($authHeader, 7);
+    $body = $request->getParsedBody();
+    error_log("Parsed body: " . print_r($body, true));
+
+    $recordId = $body['fieldData']['recordId'] ?? null;
+
+    if (empty($authHeader)) {
+        return $response->withStatus(400, 'Authorization header is missing')->withHeader('Content-Type', 'application/json');
+    }
+
+    if (!$token) {
+        $response->getBody()->write(json_encode(["Error" => "Missing Token"]));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+    }
+
+    if (empty($recordId)) {
+        return $response->withStatus(400, 'Record ID is missing')->withHeader('Content-Type', 'application/json');
+    }
+   
+    $headers = [
+        "Authorization: bearer $token",
+        'Content-Type: application/json'
+    ];
+
+    $data = json_decode($request->getBody()->getContents(), true);
+
+    if (!isset($data['fieldData'])) {
+        return $response->withStatus(400)->withHeader('Content-Type', 'application/json');
+    };
+
+    $url = "https://hp5.positionett.se/fmi/data/vLatest/databases/PositionEtt_P1PR_PROJECT/layouts/timeDataAPI/records/$recordId";
+
+    $ch = curl_init($url);
+
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PATCH");
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+
+    $filemakerResponse = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+    if ($httpCode === 200) {
+        $responseBody = json_decode($filemakerResponse, true);
+
+        if (isset($responseBody['messages'][0]['code']) && $responseBody['messages'][0]['code'] === "0") {
+            $response->getBody()->write(json_encode(["success" => true, "message" => "Time modified successfully"]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
+        }
+    }
+
+    $response->getBody()->write(json_encode(["success" => false, "message" => "Failed to modify time"]));
+    return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+
+});
+
 $app->addErrorMiddleware(true, false, false);
 
 $app->get('/favicon.ico', function (Request $request, Response $response, array $args) {
     return $response->withStatus(204); // No Content
 });
-
 
 $app->run();
