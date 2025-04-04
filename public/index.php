@@ -243,13 +243,13 @@ $app->post('/registerTime', function (Request $request, Response $response, arra
 
 // MODIFY EXISTING POST 
 
-$app->patch('/modifyTime', function (Request $request, Response $response, array $args) {
+$app->patch("/modifyTime/{recordId}", function (Request $request, Response $response, array $args) {
+    $recordId = $args['recordId'];
     $authHeader = $request->getHeaderLine('Authorization');
     $token = substr($authHeader, 7);
-    $body = $request->getParsedBody();
-    error_log("Parsed body: " . print_r($body, true));
+    
 
-    $recordId = $body['fieldData']['recordId'] ?? null;
+    error_log("Parsed body: " . print_r($request->getParsedBody(), true));
 
     if (empty($authHeader)) {
         return $response->withStatus(400, 'Authorization header is missing')->withHeader('Content-Type', 'application/json');
@@ -263,7 +263,7 @@ $app->patch('/modifyTime', function (Request $request, Response $response, array
     if (empty($recordId)) {
         return $response->withStatus(400, 'Record ID is missing')->withHeader('Content-Type', 'application/json');
     }
-   
+
     $headers = [
         "Authorization: bearer $token",
         'Content-Type: application/json'
@@ -271,9 +271,13 @@ $app->patch('/modifyTime', function (Request $request, Response $response, array
 
     $data = json_decode($request->getBody()->getContents(), true);
 
+    // Make sure fieldData is present
     if (!isset($data['fieldData'])) {
         return $response->withStatus(400)->withHeader('Content-Type', 'application/json');
     };
+
+    // Remove the recordId from the data since it's already in the URL
+    unset($data['fieldData']['recordId']);
 
     $url = "https://hp5.positionett.se/fmi/data/vLatest/databases/PositionEtt_P1PR_PROJECT/layouts/timeDataAPI/records/$recordId";
 
@@ -296,11 +300,14 @@ $app->patch('/modifyTime', function (Request $request, Response $response, array
             return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
         }
     }
-
+    
+    error_log("FileMaker Response: " . $filemakerResponse);
+    error_log("HTTP Code: " . $httpCode);
+    
     $response->getBody()->write(json_encode(["success" => false, "message" => "Failed to modify time"]));
     return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
-
 });
+
 
 $app->addErrorMiddleware(true, false, false);
 
