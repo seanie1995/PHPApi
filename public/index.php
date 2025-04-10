@@ -244,10 +244,11 @@ $app->post('/registerTime', function (Request $request, Response $response, arra
 // MODIFY EXISTING POST 
 
 $app->patch("/modifyTime/{recordId}", function (Request $request, Response $response, array $args) {
+
     $recordId = $args['recordId'];
     $authHeader = $request->getHeaderLine('Authorization');
     $token = substr($authHeader, 7);
-    
+
 
     error_log("Parsed body: " . print_r($request->getParsedBody(), true));
 
@@ -300,14 +301,74 @@ $app->patch("/modifyTime/{recordId}", function (Request $request, Response $resp
             return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
         }
     }
-    
+
     error_log("FileMaker Response: " . $filemakerResponse);
     error_log("HTTP Code: " . $httpCode);
-    
+
     $response->getBody()->write(json_encode(["success" => false, "message" => "Failed to modify time"]));
     return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
 });
 
+$app->get("/fetchValueList", function (Request $request, Response $response, array $args) {
+
+    $authHeader = $request->getHeaderLine('Authorization');
+
+    if (empty($authHeader)) {
+        return $response->withStatus(400, 'Authorization header is missing')->withHeader('Content-Type', 'application/json');
+    };
+
+    $headers = [
+        "Authorization: $authHeader",
+        'Content-Type: application/json'
+    ];
+
+    $url = "https://hp5.positionett.se/fmi/data/vLatest/databases/PositionEtt_P1PR_PROJECT/layouts/timeDataAPI";
+
+    $data = [];
+
+    $ch = curl_init($url);
+
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+
+    $responseData = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+    if ($responseData === false) {
+        $error = curl_error($ch);
+        error_log("cURL Error: $error");
+        $response->getBody()->write(json_encode([
+            'success' => false,
+            'message' => 'cURL request failed',
+            'error' => $error
+        ]));
+        return $response->withStatus(500)->withHeader('Content-Type', 'application/json');
+    }
+
+    curl_close($ch);
+
+    if ($httpCode === 401) {
+        return $response->withStatus(401, "Invalid Credentials")->withHeader('Content-Type', 'appliction/json');
+    };
+
+    if ($httpCode === 200) {
+        $decodedResponse = json_decode($responseData, true);
+
+        if (isset($decodedResponse['response']['valueLists'])) {
+            $filteredResponse = array_map(function ($posts) {
+                return [
+                    'displayValue' => $posts['displayValue'] ?? null,
+                    'value' => $posts['value'] ?? null
+                ];
+            }, $decodedResponse['response']['valueLists'][1]['values']);
+            $response->getBody()->write(json_encode(["valueLists" => $filteredResponse]));
+        } else {
+            $response->getBody()->write(json_encode(["error" => "No value list found"]));
+        };
+    };
+
+    return $response->withHeader('Content-Type', 'application/json')->withStatus($httpCode);
+});
 
 $app->addErrorMiddleware(true, false, false);
 
