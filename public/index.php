@@ -155,7 +155,7 @@ $app->post('/fetchTimeRecords', function (Request $request, Response $response, 
     $httpCode = curl_getInfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
-    if ($httpCode === 200) {
+    if ($httpCode === 200 || $httpCode === 401) {
         $responseBody = json_decode($filemakerResponse, true);
 
         if (isset($responseBody['response']['data'])) {
@@ -183,7 +183,7 @@ $app->post('/fetchTimeRecords', function (Request $request, Response $response, 
             $response->getBody()->write(json_encode(["data" => $filteredResponse]));
         } else {
 
-            $response->getBody()->write(json_encode(["error" => "No user data found"]));
+            $response->getBody()->write(json_encode(["data" => []]));
         }
     } else {
         $response->getBody()->write(json_encode([
@@ -260,7 +260,8 @@ $app->post('/fetchTodo', function (Request $request, Response $response, $args) 
                     'recordId' => $posts['recordId'] ?? null,
                     'todo_arendenr' => $posts['fieldData']['todo_arendenr'] ?? null,
                     '!common_our_reference' => $posts['fieldData']['!common_our_reference'] ?? null,
-                    // 'zb_jsonEvent' => $posts['fieldData']['zb_jsonEvent'] ?? null
+                    '!project' => $posts['fieldData']['!project'] ?? null,
+                    '!Article' => $posts['fieldData']['!Article'] ?? null
                 ];
             }, $filteredResponse);
 
@@ -331,7 +332,12 @@ $app->post('/fetchEvents', function (Request $request, Response $response, $args
                     'event_date_end' => $posts['fieldData']['event_date_end'] ?? null,
                     'event_date_start' => $posts['fieldData']['event_date_start'] ?? null,
                     'event_time_end' => $posts['fieldData']['event_time_end'] ?? null,
-                    'event_time_start' => $posts['fieldData']['event_time_start'] ?? null    
+                    'event_time_start' => $posts['fieldData']['event_time_start'] ?? null,
+                    'recordId' => $posts['recordId'] ?? null,
+                    'event_EVENTUSER::!user' => array_map(
+                        fn($user) => $user['event_EVENTUSER::!user'] ?? null,
+                        $posts['portalData']['event_EVENTUSER'] ?? []
+                    ),
                 ];
             }, $responseBody['response']['data']);
 
@@ -401,6 +407,7 @@ $app->post('/fetchEventUsers', function (Request $request, Response $response, $
                     '!ID' => $posts['fieldData']['!ID'] ?? null,
                     '!event' => $posts['fieldData']['!event'] ?? null,
                     'eventuser_done' => $posts['fieldData']['eventuser_done'] ?? null,
+                    'recordId' => $posts['recordId'] ?? null,
                     
                 ];
             }, $responseBody['response']['data']);
@@ -510,6 +517,137 @@ $app->patch("/modifyTime/{recordId}", function (Request $request, Response $resp
     unset($data['fieldData']['recordId']);
 
     $url = "https://hp5.positionett.se/fmi/data/vLatest/databases/PositionEtt_P1PR_PROJECT/layouts/timeDataAPI/records/$recordId";
+
+    $ch = curl_init($url);
+
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PATCH");
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+
+    $filemakerResponse = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+    if ($httpCode === 200) {
+        $responseBody = json_decode($filemakerResponse, true);
+
+        if (isset($responseBody['messages'][0]['code']) && $responseBody['messages'][0]['code'] === "0") {
+            $response->getBody()->write(json_encode(["success" => true, "message" => "Time modified successfully"]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
+        }
+    }
+
+    error_log("FileMaker Response: " . $filemakerResponse);
+    error_log("HTTP Code: " . $httpCode);
+
+    $response->getBody()->write(json_encode(["success" => false, "message" => "Failed to modify time"]));
+    return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+});
+
+$app->patch("/modifyEventUser/{recordId}", function (Request $request, Response $response, array $args) {
+
+    $recordId = $args['recordId'];
+    $authHeader = $request->getHeaderLine('Authorization');
+    $token = substr($authHeader, 7);
+
+
+    error_log("Parsed body: " . print_r($request->getParsedBody(), true));
+
+    if (empty($authHeader)) {
+        return $response->withStatus(400, 'Authorization header is missing')->withHeader('Content-Type', 'application/json');
+    }
+
+    if (!$token) {
+        $response->getBody()->write(json_encode(["Error" => "Missing Token"]));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+    }
+
+    if (empty($recordId)) {
+        return $response->withStatus(400, 'Record ID is missing')->withHeader('Content-Type', 'application/json');
+    }
+
+    $headers = [
+        "Authorization: bearer $token",
+        'Content-Type: application/json'
+    ];
+
+    $data = json_decode($request->getBody()->getContents(), true);
+
+    // Make sure fieldData is present
+    if (!isset($data['fieldData'])) {
+        return $response->withStatus(400)->withHeader('Content-Type', 'application/json');
+    };
+
+    // Remove the recordId from the data since it's already in the URL
+    unset($data['fieldData']['recordId']);
+
+    $url = "https://hp5.positionett.se/fmi/data/vLatest/databases/PositionEtt_P1PR_PROJECT/layouts/EventuserAPI/records/$recordId";
+
+    $ch = curl_init($url);
+
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PATCH");
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+
+    $filemakerResponse = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+    if ($httpCode === 200) {
+        $responseBody = json_decode($filemakerResponse, true);
+
+        if (isset($responseBody['messages'][0]['code']) && $responseBody['messages'][0]['code'] === "0") {
+            $response->getBody()->write(json_encode(["success" => true, "message" => "Time modified successfully"]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
+        }
+    }
+
+    error_log("FileMaker Response: " . $filemakerResponse);
+    error_log("HTTP Code: " . $httpCode);
+
+    $response->getBody()->write(json_encode(["success" => false, "message" => "Failed to modify time"]));
+    return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+});
+
+$app->patch("/modifyTodo/{recordId}", function (Request $request, Response $response, array $args) {
+
+    $recordId = $args['recordId'];
+    $authHeader = $request->getHeaderLine('Authorization');
+    $token = substr($authHeader, 7);
+
+    error_log("Parsed body: " . print_r($request->getParsedBody(), true));
+
+    if (empty($authHeader)) {
+        return $response->withStatus(400, 'Authorization header is missing')->withHeader('Content-Type', 'application/json');
+    }
+
+    if (!$token) {
+        $response->getBody()->write(json_encode(["Error" => "Missing Token"]));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+    }
+
+    if (empty($recordId)) {
+        return $response->withStatus(400, 'Record ID is missing')->withHeader('Content-Type', 'application/json');
+    }
+
+    $headers = [
+        "Authorization: bearer $token",
+        'Content-Type: application/json'
+    ];
+
+    $data = json_decode($request->getBody()->getContents(), true);
+
+    // Make sure fieldData is present
+    if (!isset($data['fieldData'])) {
+        return $response->withStatus(400)->withHeader('Content-Type', 'application/json');
+    };
+
+    // Remove the recordId from the data since it's already in the URL
+    unset($data['fieldData']['recordId']);
+
+    $url = "https://hp5.positionett.se/fmi/data/vLatest/databases/PositionEtt_P1PR_PROJECT/layouts/todoDataAPI/records/$recordId";
 
     $ch = curl_init($url);
 
